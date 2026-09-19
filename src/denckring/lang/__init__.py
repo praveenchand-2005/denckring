@@ -16,6 +16,7 @@ than be shadowed by it.
 
 from __future__ import annotations
 
+import threading
 from importlib.metadata import entry_points
 
 from denckring.core.errors import DuplicatePack, UnknownLanguage
@@ -39,27 +40,71 @@ _DEFAULTS: dict[str, LanguagePack] = {"en": EnglishPack(), "de": GermanPack(), "
 #: Discovered or explicitly registered packs, which take precedence.
 _PACKS: dict[str, LanguagePack] = {}
 _DISCOVERED = False
+_LOCK = threading.RLock()
 
 
 #: Where each installed pack came from, so a collision can name both.
 _SOURCES: dict[str, str] = {}
 
 
-def _install(packs: dict[str, LanguagePack], lang: str, pack: LanguagePack, *, source: str) -> None:
+def _is_discovered() -> bool:
+    """Read `_DISCOVERED` through a call, not a bare name.
+
+    `_discover` checks this twice — once before the lock, once after — and a
+    bare `if _DISCOVERED:` read twice in a row is, to mypy's single-threaded
+    model, the same value both times, so the second check's `return` gets
+    flagged `[unreachable]` under this project's `warn_unreachable`. It is
+    reachable: another thread can set `_DISCOVERED` between the two reads.
+    Routing the read through a function call mypy does not inline sidesteps
+    the false positive without silencing real unreachable-code findings
+    elsewhere with a blanket ignore. Same fix as `core/registry.py`.
+    """
+    return _DISCOVERED
+
+
+def _install(
+    packs: dict[str, LanguagePack],
+    lang: str,
+    pack: LanguagePack,
+    *,
+    source: str,
+    sources: dict[str, str] | None = None,
+) -> None:
     """Install a pack, refusing to choose between two claiming one language."""
+    target_sources = _SOURCES if sources is None else sources
     if lang in packs:
-        raise DuplicatePack(lang, _SOURCES.get(lang, "an installed pack"), source)
+        raise DuplicatePack(lang, target_sources.get(lang, "an installed pack"), source)
     packs[lang] = pack
-    _SOURCES[lang] = source
+    target_sources[lang] = source
 
 
 def _discover() -> None:
+    """Load every `denckring.lang` entry point once, under a lock.
+
+    Builds into local dicts and publishes into `_PACKS`/`_SOURCES` only after
+    every entry point has loaded without raising: a broken third-party pack
+    fails loudly on every call rather than being silently and permanently
+    half-installed, and a concurrent second caller blocks on `_LOCK` instead of
+    observing a partial `_PACKS` (review finding P1-01). No explicit rollback
+    is needed here, unlike the procedure registry: nothing touches the module
+    globals until the loop has finished, because entry points do not register
+    themselves as an import side effect the way procedures do.
+    """
     global _DISCOVERED
-    if _DISCOVERED:
+    if _is_discovered():
         return
-    _DISCOVERED = True
-    for entry in entry_points(group=ENTRY_POINT_GROUP):
-        _install(_PACKS, entry.name, entry.load()(), source=entry.value)
+    with _LOCK:
+        if _is_discovered():
+            return
+        local_packs: dict[str, LanguagePack] = {}
+        local_sources: dict[str, str] = {}
+        for entry in entry_points(group=ENTRY_POINT_GROUP):
+            _install(
+                local_packs, entry.name, entry.load()(), source=entry.value, sources=local_sources
+            )
+        _PACKS.update(local_packs)
+        _SOURCES.update(local_sources)
+        _DISCOVERED = True
 
 
 def get_pack(lang: str) -> LanguagePack:
