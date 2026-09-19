@@ -11,15 +11,30 @@ Nothing here computes anything. The tools call `describe`, `summaries` and
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mcp.server import MCPServer
 
 from denckring import check, describe, produce, summaries
-from denckring.core.errors import DenckringError
+from denckring.core.errors import DenckringError, TextTooLong
 from denckring.core.protocol import Lang
 
 server = MCPServer("denckring")
+
+#: A coarse backstop at the one surface this project calls "a remotely
+#: invokable resource boundary" (review P2-06) — not a precision-tuned
+#: figure, a defense-in-depth cap alongside each procedure's own algorithmic
+#: fix (see paragram's O(U*L) rewrite, P1-02). Configurable because an
+#: operator running this server for a known, larger workload should not have
+#: to patch the package to raise it.
+MAX_TEXT_CHARS = int(os.environ.get("DENCKRING_MCP_MAX_CHARS", "50000"))
+
+
+def _check_text_length(text: str) -> dict[str, Any] | None:
+    if len(text) > MAX_TEXT_CHARS:
+        return TextTooLong(len(text), MAX_TEXT_CHARS).to_dict()
+    return None
 
 
 def list_procedures_tool(
@@ -70,6 +85,8 @@ def check_text_tool(
     an `offset` into the text. Fixing the first violation listed is normally the
     fastest route to a satisfied report.
     """
+    if (too_long := _check_text_length(text)) is not None:
+        return too_long
     try:
         return check(procedure, text, lang=lang, **(params or {})).model_dump()
     except DenckringError as exc:
@@ -104,6 +121,8 @@ def apply_procedure_tool(
     wanted one result. `truncated` says whether more were found than
     `max_results` allowed.
     """
+    if (too_long := _check_text_length(text)) is not None:
+        return too_long
     try:
         produced = produce(procedure, text, lang=lang, **(params or {}))
     except DenckringError as exc:

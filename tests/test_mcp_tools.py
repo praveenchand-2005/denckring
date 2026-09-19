@@ -63,6 +63,30 @@ def test_bad_params_are_data_not_an_exception() -> None:
     assert result["code"] == "invalid_params"
 
 
+def test_check_text_tool_refuses_an_oversized_text() -> None:
+    """P2-06: the MCP surface is where algorithmic complexity becomes a
+    remotely invokable resource boundary — it needs its own coarse cap even
+    with paragram's O(U*L) fix (P1-02) in place, as defense in depth."""
+    from denckring.mcp import server
+
+    huge_text = "a " * (server.MAX_TEXT_CHARS)
+    result = check_text_tool("lipogram", huge_text)
+    assert result["code"] == "text_too_long"
+
+
+def test_check_text_tool_still_runs_an_ordinary_text() -> None:
+    result = check_text_tool("lipogram", "the quick brown fox")
+    assert "code" not in result or result.get("satisfied") is not None
+
+
+def test_apply_procedure_tool_refuses_an_oversized_text() -> None:
+    from denckring.mcp import server
+
+    huge_text = "a " * (server.MAX_TEXT_CHARS)
+    result = apply_procedure_tool("paragram", huge_text)
+    assert result["code"] == "text_too_long"
+
+
 def test_apply_returns_text() -> None:
     result = apply_procedure_tool("n_plus_7", "the cat sleeps")
     assert result["text"]

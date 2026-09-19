@@ -257,6 +257,27 @@ class InputTooLong(DenckringError):
         return {"limit": self.limit, "received": self.given, "unit": self.unit}
 
 
+class TextTooLong(DenckringError):
+    """A service boundary refuses text past a configured size, defense in
+    depth alongside each procedure's own algorithmic fixes (review P2-06) —
+    not a claim that the library itself is bounded; `check()`/`apply()`
+    called directly have no such limit.
+    """
+
+    code = "text_too_long"
+
+    def __init__(self, given: int, limit: int) -> None:
+        self.given = given
+        self.limit = limit
+        super().__init__(
+            f"text is {given} characters, and this service accepts at most {limit}. "
+            f"Shorten it, or call the library directly if you need the whole thing."
+        )
+
+    def detail(self) -> dict[str, Any]:
+        return {"given": self.given, "limit": self.limit}
+
+
 def counted(count: int, noun: str, plural: str | None = None) -> str:
     """`1 line`, `0 lines`, `2 sentences` — the `found` half of `InputTooShort`.
 
