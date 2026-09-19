@@ -31,9 +31,28 @@ server = MCPServer("denckring")
 MAX_TEXT_CHARS = int(os.environ.get("DENCKRING_MCP_MAX_CHARS", "50000"))
 
 
-def _check_text_length(text: str) -> dict[str, Any] | None:
-    if len(text) > MAX_TEXT_CHARS:
-        return TextTooLong(len(text), MAX_TEXT_CHARS).to_dict()
+def _total_length(text: str, params: dict[str, Any] | None) -> int:
+    """`text` plus every string (or list-of-string) value in `params`.
+
+    Several `checkability: source` procedures carry a second, unbounded
+    document in `params["source"]` (`SourceParams`), and `paronomasia`'s
+    `domain_words` is a list of them — both are the same remote boundary
+    `MAX_TEXT_CHARS` exists to close, and `text` alone did not cover them
+    (whole-branch review finding on P2-06).
+    """
+    total = len(text)
+    for value in (params or {}).values():
+        if isinstance(value, str):
+            total += len(value)
+        elif isinstance(value, list):
+            total += sum(len(v) for v in value if isinstance(v, str))
+    return total
+
+
+def _check_text_length(text: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    total = _total_length(text, params)
+    if total > MAX_TEXT_CHARS:
+        return TextTooLong(total, MAX_TEXT_CHARS).to_dict()
     return None
 
 
@@ -85,7 +104,7 @@ def check_text_tool(
     an `offset` into the text. Fixing the first violation listed is normally the
     fastest route to a satisfied report.
     """
-    if (too_long := _check_text_length(text)) is not None:
+    if (too_long := _check_text_length(text, params)) is not None:
         return too_long
     try:
         return check(procedure, text, lang=lang, **(params or {})).model_dump()
@@ -121,7 +140,7 @@ def apply_procedure_tool(
     wanted one result. `truncated` says whether more were found than
     `max_results` allowed.
     """
-    if (too_long := _check_text_length(text)) is not None:
+    if (too_long := _check_text_length(text, params)) is not None:
         return too_long
     try:
         produced = produce(procedure, text, lang=lang, **(params or {}))

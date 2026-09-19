@@ -102,6 +102,13 @@ class Report(BaseModel):
     """The result of checking a text. `satisfied` is always `score == 1.0`,
     enforced below rather than left as a constructor convention (P2-02)."""
 
+    #: Re-runs the `satisfied`/`score` invariant on attribute assignment, not
+    #: just at construction (whole-branch review finding: `model_validator`
+    #: alone does not). `model_copy(update=...)` — how `provenance` is set
+    #: after construction in `core/base.py` — is unaffected either way, since
+    #: it never runs validators regardless of this setting.
+    model_config = ConfigDict(validate_assignment=True)
+
     procedure: str
     satisfied: bool
     score: float = Field(ge=0.0, le=1.0)

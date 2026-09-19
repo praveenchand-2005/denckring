@@ -116,6 +116,40 @@ def test_a_late_caller_blocks_until_pack_discovery_finishes(
     monkeypatch.setattr(lang_module, "_DISCOVERED", saved_discovered)
 
 
+def test_register_pack_wins_over_a_later_entry_point_claiming_the_same_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The module docstring's precedence: explicitly registered, then entry
+    point, then built-in default. `_discover`'s publish step used to be a bare
+    `dict.update`, which has no per-key collision check and so silently let a
+    same-named entry-point pack overwrite a pack `register_pack()` already
+    installed, inverting that precedence (whole-branch review finding)."""
+    from denckring import lang as lang_module
+    from denckring.lang.en import EnglishPack
+
+    saved_packs = dict(lang_module._PACKS)
+    saved_sources = dict(lang_module._SOURCES)
+    saved_discovered = lang_module._DISCOVERED
+    monkeypatch.setattr(lang_module, "_PACKS", {})
+    monkeypatch.setattr(lang_module, "_SOURCES", {})
+    monkeypatch.setattr(lang_module, "_DISCOVERED", False)
+
+    registered = EnglishPack()
+    lang_module.register_pack(registered)
+
+    entry_point_pack = EnglishPack()
+    assert entry_point_pack is not registered
+    fake_entry = _FakeEntryPoint("en", "fake.module:factory", lambda: entry_point_pack)
+    monkeypatch.setattr(lang_module, "entry_points", lambda group=None: [fake_entry])
+
+    resolved = lang_module.get_pack("en")
+    assert resolved is registered, "an explicitly registered pack must win over an entry point"
+
+    monkeypatch.setattr(lang_module, "_PACKS", saved_packs)
+    monkeypatch.setattr(lang_module, "_SOURCES", saved_sources)
+    monkeypatch.setattr(lang_module, "_DISCOVERED", saved_discovered)
+
+
 def test_a_failed_entry_point_can_be_retried(monkeypatch: pytest.MonkeyPatch) -> None:
     """P1-01: a broken third-party pack must not permanently poison discovery,
     and must not partially publish into `_PACKS` before the failure."""

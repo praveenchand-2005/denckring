@@ -28,6 +28,26 @@ def test_report_refuses_a_contradictory_verdict() -> None:
         Report(procedure="x", satisfied=False, score=1.0)
 
 
+def test_report_refuses_a_contradictory_verdict_on_assignment_too() -> None:
+    """Whole-branch review finding: `model_validator(mode="after")` alone only
+    re-runs at construction. Without `validate_assignment=True`, `r.satisfied =
+    True` on an already-built `Report` silently violated the same invariant
+    `test_report_refuses_a_contradictory_verdict` enforces at construction.
+
+    Two separate instances, not one assignment after another: pydantic sets a
+    field before running the model validator on assignment, and does not roll
+    the field back when that validator then raises, so a second assignment on
+    the same (now-corrupted) instance would not exercise a fresh violation.
+    """
+    by_satisfied = Report(procedure="x", satisfied=False, score=0.5)
+    with pytest.raises(ValidationError):
+        by_satisfied.satisfied = True
+
+    by_score = Report(procedure="x", satisfied=False, score=0.5)
+    with pytest.raises(ValidationError):
+        by_score.score = 1.0
+
+
 def test_report_accepts_every_consistent_verdict() -> None:
     Report(procedure="x", satisfied=True, score=1.0)
     Report(procedure="x", satisfied=False, score=0.5)

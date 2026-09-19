@@ -102,8 +102,15 @@ def _discover() -> None:
             _install(
                 local_packs, entry.name, entry.load()(), source=entry.value, sources=local_sources
             )
-        _PACKS.update(local_packs)
-        _SOURCES.update(local_sources)
+        # setdefault, not update: an explicitly register_pack()'d entry must win
+        # over an entry-point pack claiming the same language, per the module
+        # docstring's precedence. `dict.update` would silently invert that for
+        # any caller who registered before discovery's first, lazy trigger
+        # (review: whole-branch finding on P1-01's rollback rewrite).
+        for lang, pack in local_packs.items():
+            _PACKS.setdefault(lang, pack)
+        for lang, source in local_sources.items():
+            _SOURCES.setdefault(lang, source)
         _DISCOVERED = True
 
 

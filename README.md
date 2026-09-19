@@ -59,6 +59,11 @@ The server exposes four tools — `list_procedures`, `describe_procedure`, `chec
 tools, because model performance degrades with tool count. Errors come back as data
 (`{"code": "invalid_params", ...}`), never as a traceback a model cannot act on.
 
+`check_text` and `apply_procedure` refuse a text over `DENCKRING_MCP_MAX_CHARS` characters
+(default 50000, counting `text` plus any string parameters such as `source`) with a
+`text_too_long` error, rather than running against an arbitrarily large remote input. Set
+`DENCKRING_MCP_MAX_CHARS` to raise or lower that cap for a known workload.
+
 For Claude Code, the skill at
 [`skills/denckring/SKILL.md`](https://github.com/senzelden/denckring/blob/main/skills/denckring/SKILL.md)
 shells out to the CLI instead, and needs no extra beyond the package itself.
