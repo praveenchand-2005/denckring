@@ -20,7 +20,32 @@ on:
         options: [testpypi, none]
 
 jobs:
+  # Runs on every trigger, unconditionally — an `if:`-guarded preflight would
+  # leave `build`'s `needs: [preflight]` depending on a job that is sometimes
+  # skipped, and whether GitHub Actions treats a skipped dependency as
+  # satisfied is exactly the kind of thing worth not relying on. Instead the
+  # job always runs and the tag/version/changelog check happens only on a
+  # `push` (a real tag); `workflow_dispatch` (the TestPyPI rehearsal) has no
+  # tag to check against, so it prints why and exits 0.
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify tag, version and changelog agree (skipped outside a tag push)
+        # $GITHUB_EVENT_NAME/$GITHUB_REF_NAME (GitHub's own default env vars,
+        # already used the same way by the `notes` job below) rather than
+        # ${{ github.ref_name }} inline: a tag name can legally contain shell
+        # metacharacters, and an env var doesn't get shell-expanded the way an
+        # `${{ }}` substitution does.
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            python3 scripts/release_preflight.py "$GITHUB_REF_NAME"
+          else
+            echo "not a tag push — preflight has nothing to check"
+          fi
+
   build:
+    needs: [preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -40,6 +65,7 @@ jobs:
   # `gh-deploy` needs a paid plan, which meant the old order guaranteed that the
   # first release would publish and then go red.
   docs:
+    needs: [preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,7 +89,7 @@ jobs:
     # TestPyPI, from a manual run. One leg per distribution, for the reason the
     # `publish` matrix below spells out.
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
-    needs: [build, docs]
+    needs: [preflight, build, docs]
     runs-on: ubuntu-latest
     strategy:
       # Every leg is independent and each says something different: stopping the
@@ -131,7 +157,7 @@ jobs:
     # token this whole arrangement exists to avoid; the second breaks the version
     # lock these six are released under.
     if: github.event_name == 'push'
-    needs: [build, docs]
+    needs: [preflight, build, docs]
     runs-on: ubuntu-latest
     strategy:
       # A partial release is the failure mode here, and it is worth seeing whole:
