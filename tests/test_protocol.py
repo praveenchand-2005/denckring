@@ -19,6 +19,21 @@ def test_violation_offset_is_optional() -> None:
     assert Violation(rule="forbidden_letter", found="e", expected="").offset is None
 
 
+def test_report_refuses_a_contradictory_verdict() -> None:
+    """P2-02: satisfied and score must agree — the model enforces its own
+    documented invariant rather than trusting every constructor to."""
+    with pytest.raises(ValidationError):
+        Report(procedure="x", satisfied=True, score=0.0)
+    with pytest.raises(ValidationError):
+        Report(procedure="x", satisfied=False, score=1.0)
+
+
+def test_report_accepts_every_consistent_verdict() -> None:
+    Report(procedure="x", satisfied=True, score=1.0)
+    Report(procedure="x", satisfied=False, score=0.5)
+    Report(procedure="x", satisfied=False, score=0.0)
+
+
 def test_meta_round_trips_through_json() -> None:
     meta = Meta(
         id="lipogram",

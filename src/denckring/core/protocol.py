@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar, Literal, Protocol, get_args, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from denckring.core.provenance import Provenance
 
@@ -99,7 +99,8 @@ class Evidence(BaseModel):
 
 
 class Report(BaseModel):
-    """The result of checking a text. `satisfied` is always `score == 1.0`."""
+    """The result of checking a text. `satisfied` is always `score == 1.0`,
+    enforced below rather than left as a constructor convention (P2-02)."""
 
     procedure: str
     satisfied: bool
@@ -118,6 +119,15 @@ class Report(BaseModel):
     #: stamp is applied once in `BaseProcedure.check` rather than in each of the
     #: hundred and twenty-two places a report is constructed.
     provenance: Provenance | None = None
+
+    @model_validator(mode="after")
+    def _satisfied_matches_score(self) -> Report:
+        if self.satisfied != (self.score == 1.0):
+            raise ValueError(
+                f"satisfied={self.satisfied} disagrees with score={self.score} "
+                f"(satisfied must equal score == 1.0)"
+            )
+        return self
 
 
 class Candidate(BaseModel):
