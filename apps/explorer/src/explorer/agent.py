@@ -20,11 +20,14 @@ hand-driven server already has to be restarted for.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from dataclasses import dataclass, field
 from typing import Any
 
 from explorer import models
+
+logger = logging.getLogger(__name__)
 
 #: The console script `denckring[mcp]` installs. Looked up rather than assumed,
 #: so the page can say it is missing instead of failing inside anyio's task
@@ -113,6 +116,7 @@ async def run(question: str, model: str, max_turns: int = MAX_TURNS) -> Transcri
             tools = [_as_ollama_tool(tool) for tool in (await session.list_tools()).tools]
             await _loop(session, tools, transcript, max_turns)
     except Exception as exc:
+        logger.exception("MCP session failed")
         # anyio wraps a failure inside the session in an ExceptionGroup, so the
         # useful line is rarely the outermost one. Reported rather than raised,
         # for the reason `witz.py` gives: this sits beside a verdict.
