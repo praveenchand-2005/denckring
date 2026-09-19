@@ -191,8 +191,11 @@ are built on them:
   returns `texts[0]`.
 - **The catalogue export schema** (`denckring catalogue export`), including the `licence`
   and `attribution` keys the CC BY terms are carried by.
-- **The `denckring.lang` entry-point group** and the capability names a pack declares, so
-  an installed third-party pack keeps working.
+- **The `denckring.lang` entry-point group** and the capability names a pack
+  declares, so an installed third-party pack keeps working. This covers
+  replacing or extending the data behind English, German or French (ADR
+  0044) — `Lang` itself is a closed three-member type, so a pack cannot
+  register a new language through this mechanism.
 
 Not stable, and expected to move: violation `rule` strings, `metrics` keys, message
 wording, and everything under `denckring.core`. A check's *verdict* is a contract; the
