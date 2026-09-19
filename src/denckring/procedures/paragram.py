@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import string
-from itertools import combinations
 
 from pydantic import Field
 
@@ -54,6 +53,32 @@ def differ_by_one(left: str, right: str) -> bool:
     return sum(a != b for a, b in zip(left, right, strict=True)) == 1
 
 
+def _count_pairs(words: list[str]) -> int:
+    """Count unique unordered pairs differing at exactly one position, in O(U*L).
+
+    Replaces an all-pairs `combinations()` scan (P1-02): that was O(U^2 * L) and
+    the project's own SECURITY.md treats a checker hang on adversarial input as
+    in scope. For each length bucket, and each character position within that
+    length, words sharing a wildcard pattern at that position agree everywhere
+    except possibly there — so a true distance-1 pair collides in exactly one
+    (length, position) bucket, and summing `n*(n-1)//2` per bucket counts every
+    pair exactly once. `\0` is a safe wildcard sentinel: `_normalise` already
+    filters to `str.isalpha()` characters, which never includes it.
+    """
+    by_length: dict[int, list[str]] = {}
+    for word in set(words):
+        by_length.setdefault(len(word), []).append(word)
+    total = 0
+    for length, bucket_words in by_length.items():
+        for position in range(length):
+            counts: dict[str, int] = {}
+            for word in bucket_words:
+                pattern = word[:position] + "\0" + word[position + 1 :]
+                counts[pattern] = counts.get(pattern, 0) + 1
+            total += sum(n * (n - 1) // 2 for n in counts.values())
+    return total
+
+
 @register
 class Paragram(ConstructiveProcedure[ParagramParams, ParagramApplyParams]):
     """The swap is in the text, so the text alone decides.
@@ -82,26 +107,22 @@ class Paragram(ConstructiveProcedure[ParagramParams, ParagramApplyParams]):
 
     def _check(self, text: str, pack: LanguagePack, params: ParagramParams) -> Report:
         words = self._normalise(text, pack, params.fold_diacritics)
-        pairs = [
-            (left, right)
-            for left, right in combinations(sorted(set(words)), 2)
-            if differ_by_one(left, right)
-        ]
+        pair_count = _count_pairs(words)
         violations: list[Violation] = []
-        if len(pairs) < params.minimum:
+        if pair_count < params.minimum:
             violations.append(
                 Violation(
                     rule="no_paragram",
                     offset=None,
-                    found=f"{len(pairs)} swapped pairs",
+                    found=f"{pair_count} swapped pairs",
                     expected=f"at least {params.minimum}",
                 )
             )
         return self._report(
-            good=min(len(pairs), params.minimum),
+            good=min(pair_count, params.minimum),
             total=params.minimum,
             violations=violations,
-            metrics={"pairs": float(len(pairs))},
+            metrics={"pairs": float(pair_count)},
         )
 
     @classmethod
