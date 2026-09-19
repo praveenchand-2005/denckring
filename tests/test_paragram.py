@@ -257,3 +257,61 @@ def test_a_large_adversarial_text_checks_without_hanging() -> None:
     elapsed = time.monotonic() - start
     assert elapsed < 3.0, f"took {elapsed:.2f}s"
     assert report.metrics["pairs"] >= 0.0
+
+
+def test_a_single_very_long_word_does_not_hang() -> None:
+    """Fix round 1: the first version of `_count_pairs` rebuilt an O(length)
+    wildcarded *string* per position instead of an O(1) hash combine, which is
+    O(length^2) per word and invisible to every test above — they all fix
+    word length at 5 and vary word *count*. This is the exact adversarial
+    input the round-1 review reported hanging: one word, zero possible pairs,
+    but the buggy version still took over a second on it — while the O(U^2*L)
+    `combinations()` code this task originally replaced was instant, since a
+    one-element set has no pairs to check at all.
+    """
+    start = time.monotonic()
+    result = _count_pairs(["a" * 99_999 + "b"])
+    elapsed = time.monotonic() - start
+    assert result == 0
+    assert elapsed < 1.0, f"took {elapsed:.2f}s — check for an O(length^2) regression"
+
+
+def test_count_pairs_scales_with_word_length() -> None:
+    """The word-length axis, which no test above exercises: word *count* is
+    fixed low (20) and only *length* varies, so a quadratic-in-length
+    regression shows up as a blow-up here even though it's invisible to
+    `test_count_pairs_is_not_quadratic` (which fixes length at 5) and
+    `test_a_large_adversarial_text_checks_without_hanging` (length 5 again).
+    Doubling the length should cost roughly double, not roughly quadruple.
+    """
+
+    def _timed(length: int) -> float:
+        words = [f"{i:04d}{'x' * (length - 4)}" for i in range(20)]
+        start = time.monotonic()
+        _count_pairs(words)
+        return time.monotonic() - start
+
+    small = _timed(2000)
+    large = _timed(8000)
+    assert large < max(small * 4, 1.0), (
+        f"length 2000 took {small:.3f}s, length 8000 (4x longer) took "
+        f"{large:.3f}s — that looks quadratic in word length, not linear"
+    )
+    assert large < 1.0, f"took {large:.2f}s for 20 words of length 8000"
+
+
+def test_a_realistic_long_document_checks_without_hanging() -> None:
+    """Mirrors the round-1 review's more realistic case: not one pathological
+    word, but many long, unique ones — 300 unique 3000-character words is a
+    plausible large document, not an extreme construction, and it hung for
+    2.6s under the O(length^2) regression."""
+    import random
+
+    rng = random.Random(3)
+    alphabet = "abcdefghij"
+    words = {"".join(rng.choice(alphabet) for _ in range(3000)) for _ in range(300)}
+    assert len(words) == 300
+    start = time.monotonic()
+    _count_pairs(list(words))
+    elapsed = time.monotonic() - start
+    assert elapsed < 1.0, f"took {elapsed:.2f}s for 300 unique 3000-char words"
