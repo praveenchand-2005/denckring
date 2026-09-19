@@ -35,7 +35,7 @@ def test_apply_runnable_reports_what_the_generator_lacks() -> None:
 
 
 def test_rows_without_a_generator_requirement_default_to_empty() -> None:
-    assert catalogue.get("lipogram").apply_requires == []
+    assert catalogue.get("lipogram").apply_requires == ()
 
 
 #: pytest's own "pid" spelling, not "procedure_id" — the shared conftest's

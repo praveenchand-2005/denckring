@@ -28,10 +28,10 @@ def test_meta_round_trips_through_json() -> None:
         family="letter",
         attribution="primary",
         checkability="self",
-        aliases=[],
+        aliases=(),
         kind="restrictive",
-        languages=["en"],
-        requires=["tokens"],
+        languages=("en",),
+        requires=("tokens",),
         deterministic=True,
         prompt_hints={"en": "Write without using the letter e."},
     )

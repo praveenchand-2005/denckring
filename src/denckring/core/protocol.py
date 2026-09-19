@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar, Literal, Protocol, get_args, runtime_checkable
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from denckring.core.provenance import Provenance
 
@@ -209,7 +209,18 @@ class Production(BaseModel):
 
 
 class Meta(BaseModel):
-    """A catalogue entry. The single source of truth for a procedure's description."""
+    """A catalogue entry. The single source of truth for a procedure's description.
+
+    Frozen, with its list-shaped fields as tuples: catalogue.get() returns the
+    same cached object to every caller (P2-01), so a mutable Meta let one
+    caller's introspection silently change what a registered procedure
+    requires for every future check() call. `names`, `definitions` and
+    `prompt_hints` stay plain dicts — no demonstrated mutation path reached
+    them, and freezing a dict field needs a different mechanism than a tuple
+    swap; that residual is deliberate, not overlooked.
+    """
+
+    model_config = ConfigDict(frozen=True)
 
     id: str
     names: dict[Lang, str]
@@ -223,17 +234,17 @@ class Meta(BaseModel):
     #: the five-part coverage line has always counted.
     layer: Layer = "verfahren"
     attested: Attestation = "codified"
-    aliases: list[str] = Field(default_factory=list)
+    aliases: tuple[str, ...] = Field(default_factory=tuple)
     kind: Kind
-    languages: list[Lang]
-    requires: list[str] = Field(default_factory=list)
+    languages: tuple[Lang, ...]
+    requires: tuple[str, ...] = Field(default_factory=tuple)
     #: What the *generator* needs, which is not what the checker needs.
     #: `anagram` checks with core alone and generates only with a word lexicon;
     #: one list could not say both, so the generator's requirement went
     #: undeclared and `missing` reported nothing. ADR 0002 makes `apply` the
     #: optional half, and this is the field that lets the optional half be
     #: honest about its own cost.
-    apply_requires: list[str] = Field(default_factory=list)
+    apply_requires: tuple[str, ...] = Field(default_factory=tuple)
     deterministic: bool = True
     prompt_hints: dict[Lang, str] = Field(default_factory=dict)
     #: Contested figures, reception history and caveats — anything true about the
