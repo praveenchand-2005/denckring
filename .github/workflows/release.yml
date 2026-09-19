@@ -20,8 +20,11 @@ on:
         options: [testpypi, none]
 
 jobs:
-  # Runs on every trigger, unconditionally — an `if:`-guarded preflight would
-  # leave `build`'s `needs: [preflight]` depending on a job that is sometimes
+  # P1-03: a pushed tag must match every workspace version and a stamped
+  # changelog section before this workflow is allowed to build or publish —
+  # see scripts/release_preflight.py for the check itself. Runs on every
+  # trigger, unconditionally — an `if:`-guarded preflight would leave
+  # `build`'s `needs: [preflight]` depending on a job that is sometimes
   # skipped, and whether GitHub Actions treats a skipped dependency as
   # satisfied is exactly the kind of thing worth not relying on. Instead the
   # job always runs and the tag/version/changelog check happens only on a

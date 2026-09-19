@@ -30,23 +30,27 @@ DISTRIBUTIONS = (
 )
 
 
-def _version(pyproject_path: str) -> str:
-    manifest = tomllib.loads((ROOT / pyproject_path).read_text(encoding="utf-8"))
+def _version(root: Path, pyproject_path: str) -> str:
+    manifest = tomllib.loads((root / pyproject_path).read_text(encoding="utf-8"))
     return str(manifest["project"]["version"])
 
 
-def _changelog_has_section(version: str) -> bool:
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+def _changelog_has_section(root: Path, version: str) -> bool:
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     return re.search(rf"^## \[{re.escape(version)}\]", changelog, re.MULTILINE) is not None
 
 
-def main(tag: str) -> int:
+def main(tag: str, root: Path = ROOT) -> int:
+    # `root` defaults to this checkout (ROOT) for the real CLI entrypoint below;
+    # tests override it with an isolated fake workspace so the changelog-missing
+    # branch is provably reachable rather than merely inherited by inspection
+    # (P1-03 fix round 1: the version-mismatch check was shadowing it).
     if not tag.startswith("v"):
         print(f"tag {tag!r} does not start with 'v'", file=sys.stderr)
         return 1
     tag_version = tag[1:]
 
-    versions = {name: _version(path) for name, path in DISTRIBUTIONS}
+    versions = {name: _version(root, path) for name, path in DISTRIBUTIONS}
     unique_versions = set(versions.values())
     if len(unique_versions) != 1:
         print(f"workspace versions disagree: {versions}", file=sys.stderr)
@@ -60,7 +64,7 @@ def main(tag: str) -> int:
         )
         return 1
 
-    if not _changelog_has_section(workspace_version):
+    if not _changelog_has_section(root, workspace_version):
         print(
             f"CHANGELOG.md has no '## [{workspace_version}]' section — stamp it before tagging",
             file=sys.stderr,

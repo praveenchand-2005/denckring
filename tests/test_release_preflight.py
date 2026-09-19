@@ -7,6 +7,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+from release_preflight import DISTRIBUTIONS, main
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "release_preflight.py"
 
@@ -37,3 +43,34 @@ def test_a_mismatched_tag_is_refused() -> None:
 def test_a_tag_with_no_changelog_section_is_refused(tmp_path: Path, monkeypatch: object) -> None:
     result = _run("v0.0.0-nonexistent")
     assert result.returncode != 0
+
+
+def test_a_matching_tag_with_no_changelog_section_is_refused_by_that_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`test_a_tag_with_no_changelog_section_is_refused` above only proves a
+    non-zero exit — its tag also fails the version-mismatch check first, so
+    `_changelog_has_section` is never actually reached and could be hardcoded
+    to always return `True` without any test noticing (P1-03 fix round 1).
+
+    This builds an isolated fake workspace where every DISTRIBUTIONS
+    `pyproject.toml` agrees with the tag, so the version check passes and the
+    only possible failure is the changelog one — proven by asserting on the
+    changelog message and the *absence* of the version-mismatch message,
+    calling `main` directly (rather than via `_run`'s subprocess) with an
+    injected `root` so no real file on disk needs editing."""
+    version = "9.9.9"
+    for _name, pyproject_path in DISTRIBUTIONS:
+        target = tmp_path / pyproject_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f'[project]\nversion = "{version}"\n', encoding="utf-8")
+    (tmp_path / "CHANGELOG.md").write_text(
+        "## [Unreleased]\n\n## [9.9.8] - 2026-01-01\n", encoding="utf-8"
+    )
+
+    exit_code = main(f"v{version}", root=tmp_path)
+    stderr = capsys.readouterr().err
+
+    assert exit_code != 0
+    assert "does not match workspace version" not in stderr
+    assert f"CHANGELOG.md has no '## [{version}]' section" in stderr
