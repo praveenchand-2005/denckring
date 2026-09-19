@@ -3,12 +3,13 @@
 Committed so the data files are reproducible and diffable, the same convention
 `denckring-de-data/scripts/build_lexicon.py` follows.
 
-    python scripts/build_pronunciations.py [--dump PATH]
+    python scripts/build_pronunciations.py [--dump PATH] [--expected-sha256 HASH]
 
-Without `--dump` the current `dewiktionary-latest-pages-articles.xml.bz2` is
-downloaded to a temporary file, which is roughly 270MB. With it, an already
-downloaded copy is read instead — the dump is regenerated weekly and pinning a
-local copy is the only way to reproduce a past build exactly.
+Without `--dump` the dated dump at `DUMP_URL` (currently `DUMP_DATE`, see
+below) is downloaded to a temporary file, which is roughly 270MB, and checked
+against `EXPECTED_SHA256`. With `--dump`, an already downloaded copy is read
+instead and not hash-checked — the dump is regenerated periodically and
+pinning a local copy is the only way to reproduce a past build exactly.
 
 German Wiktionary is CC BY-SA 4.0. See LICENSE-WIKTIONARY, and ADR 0030 for why
 that licence is quarantined in a distribution of its own.
@@ -29,10 +30,24 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _download_integrity import verify_or_record
+
+#: Dated, not `latest`: checked by hand against
+#: `https://dumps.wikimedia.org/dewiktionary/` on 2026-09-19, which lists a
+#: dated subdirectory per month (`20260901/`, ..., `latest/`) — the same
+#: filename pattern under a dated path (`dewiktionary-20260901-pages-articles
+#: .xml.bz2` alongside `dewiktionary-latest-pages-articles.xml.bz2`). Pinning
+#: the date is what makes a past build reproducible; `latest` moves under you.
+DUMP_DATE = "20260901"
 DUMP_URL = (
-    "https://dumps.wikimedia.org/dewiktionary/latest/dewiktionary-latest-pages-articles.xml.bz2"
+    f"https://dumps.wikimedia.org/dewiktionary/{DUMP_DATE}/"
+    f"dewiktionary-{DUMP_DATE}-pages-articles.xml.bz2"
 )
 USER_AGENT = "denckring-de-wiktionary/0.1 (https://github.com/senzelden/denckring)"
+#: Captured 2026-09-19 from a real download of the URL above — 268,603,455
+#: bytes. Re-run this script with `--expected-sha256` omitted, against a newer
+#: `DUMP_DATE`, to print a new digest to pin for the next dump.
+EXPECTED_SHA256 = "76d8b4b6e436afe12d46905be106540d11ead312cb0b1a264ffcd6bc1b15ea43"
 
 DATA = Path(__file__).resolve().parents[1] / "src" / "denckring_de_wiktionary" / "data"
 PRONUNCIATIONS = DATA / "pronunciations.txt.gz"
@@ -178,16 +193,23 @@ def _write(path: Path, rows: list[tuple[str, str]]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dump", type=Path, help="A downloaded dewiktionary dump to read.")
+    parser.add_argument(
+        "--expected-sha256",
+        help="SHA-256 the downloaded dump must match (defaults to EXPECTED_SHA256).",
+    )
     args = parser.parse_args()
 
     dump = args.dump
     if dump is None:
-        dump = DATA.parent.parent.parent / "dewiktionary-latest-pages-articles.xml.bz2"
+        dump = DATA.parent.parent.parent / f"dewiktionary-{DUMP_DATE}-pages-articles.xml.bz2"
         print(f"downloading {DUMP_URL} -> {dump}", file=sys.stderr)
         request = urllib.request.Request(DUMP_URL, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request) as response, dump.open("wb") as handle:
-            while chunk := response.read(1 << 20):
-                handle.write(chunk)
+        with urllib.request.urlopen(request) as response:
+            data = response.read()
+        expected = args.expected_sha256 if args.expected_sha256 is not None else EXPECTED_SHA256
+        digest = verify_or_record(data, source=DUMP_URL, expected_sha256=expected)
+        print(f"{DUMP_URL}: sha256 {digest}", file=sys.stderr)
+        dump.write_bytes(data)
 
     pronunciations: list[tuple[str, str]] = []
     glosses: list[tuple[str, str]] = []

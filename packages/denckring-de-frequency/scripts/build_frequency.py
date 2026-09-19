@@ -2,7 +2,8 @@
 
 Run by hand, not by any gate. It downloads 219 MB and writes one artefact:
 
-    uv run python packages/denckring-de-frequency/scripts/build_frequency.py
+    uv run python packages/denckring-de-frequency/scripts/build_frequency.py \
+        [--expected-sha256 HASH]
 
 The source is the Leipzig Corpora Collection's `deu_news_2023_1M`, whose
 `*-words.txt` is `id <tab> word <tab> frequency`. Only that one member is read;
@@ -15,15 +16,23 @@ the published download they offer instead, taken once and cached.
 
 from __future__ import annotations
 
+import argparse
 import gzip
 import json
+import sys
 import tarfile
 import urllib.request
 from datetime import date
 from pathlib import Path
 
+from _download_integrity import verify_or_record
+
 CORPUS = "deu_news_2023_1M"
 URL = f"https://downloads.wortschatz-leipzig.de/corpora/{CORPUS}.tar.gz"
+#: Captured 2026-09-19 from a real download of the URL above — 229,132,821
+#: bytes. Re-run this script with `--expected-sha256` omitted to print a new
+#: digest to pin if the corpus is ever replaced at this URL.
+EXPECTED_SHA256 = "392065f34be70e3612d6ef6b3edc6687b026524e57e00eef47f0528456deb1ba"
 
 #: Where the German Wiktionary chapter already caches its dump.
 CACHE = Path.home() / ".cache" / "denckring-dumps"
@@ -85,12 +94,23 @@ def bands(rows: list[tuple[str, int]], known: set[str], nouns_lower: set[str]) -
     }
 
 
-def fetch(cache: Path = CACHE) -> Path:
-    """The corpus archive, downloaded once and kept."""
+def fetch(cache: Path = CACHE, *, expected_sha256: str | None) -> Path:
+    """The corpus archive, downloaded once and kept.
+
+    Hashed either way — a fresh download or a cached copy from an earlier run
+    — because a cached file is exactly as unverified as a downloaded one until
+    something checks it (P2-05).
+    """
     cache.mkdir(parents=True, exist_ok=True)
     archive = cache / f"{CORPUS}.tar.gz"
-    if not archive.exists():
-        urllib.request.urlretrieve(URL, archive)
+    if archive.exists():
+        data = archive.read_bytes()
+    else:
+        with urllib.request.urlopen(URL, timeout=300) as response:
+            data = response.read()
+        archive.write_bytes(data)
+    digest = verify_or_record(data, source=URL, expected_sha256=expected_sha256)
+    print(f"{URL}: sha256 {digest}", file=sys.stderr)
     return archive
 
 
@@ -117,7 +137,15 @@ def rows_from(archive: Path) -> list[tuple[str, int]]:
 def main() -> None:
     from denckring_de_data import GermanDataPack, known_words
 
-    archive = fetch()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--expected-sha256",
+        help="SHA-256 the corpus archive must match (defaults to EXPECTED_SHA256).",
+    )
+    args = parser.parse_args()
+    expected = args.expected_sha256 if args.expected_sha256 is not None else EXPECTED_SHA256
+
+    archive = fetch(expected_sha256=expected)
     rows = rows_from(archive)
     table = bands(
         rows,
