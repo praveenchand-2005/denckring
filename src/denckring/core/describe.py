@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from denckring.core import catalogue
 from denckring.core.base import ConstructiveProcedure
+from denckring.core.errors import UnknownLanguage
 from denckring.core.protocol import Constructive, Lang, LanguagePack, Meta
 from denckring.core.registry import all_procedures, get
 
@@ -131,14 +132,17 @@ class Description(BaseModel):
 def runnable(meta: Meta, lang: Lang = "en") -> tuple[bool, list[str]]:
     """Whether this install can run the procedure, and what it lacks.
 
-    Returns rather than raises, because the caller is deciding what to offer
-    rather than executing anything.
+    Returns rather than raises for a genuine capability gap. A plugin/import
+    error is not a capability gap — it is a broken install, and letting it
+    surface is what tells a caller the two apart (P2-03); `describe.runnable`
+    used to catch bare `Exception` here, which hid `DuplicatePack` and any
+    third-party entry-point failure behind an ordinary-looking "not runnable".
     """
     from denckring.lang import get_pack
 
     try:
         pack = get_pack(lang)
-    except Exception:
+    except UnknownLanguage:
         return False, list(meta.requires)
     missing = [cap for cap in meta.requires if cap not in pack.capabilities]
     return not missing, missing
@@ -158,7 +162,7 @@ def apply_runnable(
 
         try:
             pack = get_pack(lang)
-        except Exception:
+        except UnknownLanguage:
             return False, [*meta.requires, *meta.apply_requires]
     missing = [
         capability
