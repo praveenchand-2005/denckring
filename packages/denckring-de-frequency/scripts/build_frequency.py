@@ -103,14 +103,19 @@ def fetch(cache: Path = CACHE, *, expected_sha256: str | None) -> Path:
     """
     cache.mkdir(parents=True, exist_ok=True)
     archive = cache / f"{CORPUS}.tar.gz"
-    if archive.exists():
+    cached = archive.exists()
+    if cached:
         data = archive.read_bytes()
     else:
         with urllib.request.urlopen(URL, timeout=300) as response:
             data = response.read()
-        archive.write_bytes(data)
+    # Hash before writing, not after: a mismatch must raise before the bad
+    # bytes reach the cache, or every later run reads the same corrupt file
+    # and fails the same way until a human notices and deletes it by hand.
     digest = verify_or_record(data, source=URL, expected_sha256=expected_sha256)
     print(f"{URL}: sha256 {digest}", file=sys.stderr)
+    if not cached:
+        archive.write_bytes(data)
     return archive
 
 
