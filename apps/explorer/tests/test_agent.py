@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -166,6 +167,30 @@ def test_a_missing_server_is_named_rather_than_failing_inside_anyio(
     assert "PATH" in transcript.problem
 
 
+def test_mcp_session_logs_the_real_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """P3-04: a real MCP protocol regression must be visible in server logs,
+    not indistinguishable from a daemon that never started.
+
+    `stdio_client` is imported locally inside `run` at call time, so the module
+    attribute that matters is `mcp.client.stdio.stdio_client`, not
+    `agent.stdio_client` — that name never exists on the `agent` module.
+    """
+    monkeypatch.setattr("explorer.agent.shutil.which", lambda name: "/usr/bin/denckring-mcp")
+
+    def broken_stdio_client(*args: object, **kwargs: object) -> None:
+        raise ValueError("simulated protocol regression, not a daemon outage")
+
+    monkeypatch.setattr("mcp.client.stdio.stdio_client", broken_stdio_client)
+    with caplog.at_level(logging.ERROR):
+        transcript = asyncio.run(agent.run("test question", "some-model", max_turns=1))
+    assert "MCP session failed" in (transcript.problem or "")
+    # As above: the traceback lives in the formatted record, not in
+    # `record.message`, so check the log output an operator would see.
+    assert "simulated protocol regression" in caplog.text
+
+
 # ── the provider ────────────────────────────────────────────────────────────
 
 
@@ -210,6 +235,27 @@ def test_no_daemon_is_a_message_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> 
     found, problem = models.available()
     assert found == []
     assert "Could not reach Ollama" in problem
+
+
+def test_available_logs_the_real_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """P3-04: a real protocol regression must be visible in server logs, not
+    indistinguishable from Ollama simply being unreachable."""
+
+    def broken_urlopen(*args: object, **kwargs: object) -> None:
+        raise ValueError("simulated protocol regression, not a daemon outage")
+
+    monkeypatch.setattr("explorer.models.urllib.request.urlopen", broken_urlopen)
+    with caplog.at_level(logging.ERROR):
+        found, problem = models.available()
+    assert found == []
+    assert "Could not reach Ollama" in problem
+    # The real exception (type and traceback) must reach the log output, not
+    # just the friendly summary passed to `logger.exception`'s own message —
+    # `record.message` alone omits the traceback, so this checks the full
+    # formatted record the way an operator would actually read it.
+    assert "simulated protocol regression" in caplog.text
 
 
 # ── the page ────────────────────────────────────────────────────────────────

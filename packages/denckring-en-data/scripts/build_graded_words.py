@@ -3,7 +3,7 @@
 Committed so the data file is reproducible and diffable, and so neither
 installation nor use touches the network (ADR 0013).
 
-    python scripts/build_graded_words.py [scowl-2020.12.07.tar.gz]
+    python scripts/build_graded_words.py [scowl-2020.12.07.tar.gz] [--expected-sha256 HASH]
 
 SCOWL is MIT-like: no share-alike, no non-commercial clause. LICENSE-SCOWL is
 SCOWL's whole Copyright file rather than a summary of it, because Atkinson's own
@@ -17,10 +17,10 @@ it. See LICENSE-SCOWL, and `write_licence` below.
 
 from __future__ import annotations
 
+import argparse
 import gzip
 import json
 import re
-import shutil
 import sys
 import tarfile
 import tempfile
@@ -29,12 +29,18 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from _download_integrity import verify_or_record
+
 #: Pinned, not "latest": the shipped band of every word is part of this package's
 #: observable behaviour, so an unpinned build would silently reorder anagram
 #: results between releases.
 RELEASE = "2020.12.07"
 URL = f"https://downloads.sourceforge.net/project/wordlist/SCOWL/{RELEASE}/scowl-{RELEASE}.tar.gz"
 USER_AGENT = "denckring-en-data/0.1 (https://github.com/senzelden/denckring)"
+#: Captured 2026-09-19 from a real download of the URL above — 2,569,810 bytes.
+#: Re-run this script with `--expected-sha256` omitted to print a new digest to
+#: pin if RELEASE ever moves.
+EXPECTED_SHA256 = "5587667caa20c4891390c2d42dbb4d5c4c3f41bee77af1457ece3ba23fb859cc"
 
 #: Only `*-words.*`. SCOWL also ships `*-proper-names.*` and `*-abbreviations.*`,
 #: and those are precisely the defect being fixed: `sutphen`, `dority` and
@@ -92,12 +98,15 @@ SEPARATOR = "; "
 KEY = "SCOWL"
 
 
-def download(destination: Path) -> None:
+def download(destination: Path, *, expected_sha256: str | None) -> None:
     """Fetch the pinned release. Run by hand: ADR 0013 puts the network in the
     build, never in installation or use, which is why the output is committed."""
     request = urllib.request.Request(URL, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=300) as response, destination.open("wb") as out:
-        shutil.copyfileobj(response, out)
+    with urllib.request.urlopen(request, timeout=300) as response:
+        data = response.read()
+    digest = verify_or_record(data, source=URL, expected_sha256=expected_sha256)
+    print(f"{URL}: sha256 {digest}", file=sys.stderr)
+    destination.write_bytes(data)
 
 
 def read_bands(tar: tarfile.TarFile) -> tuple[dict[str, int], list[int]]:
@@ -199,13 +208,24 @@ def write_metadata(count: int, sizes: list[int]) -> None:
 
 
 def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "archive", nargs="?", type=Path, help="An already-downloaded scowl-*.tar.gz."
+    )
+    parser.add_argument(
+        "--expected-sha256",
+        help="SHA-256 the downloaded release must match (defaults to EXPECTED_SHA256).",
+    )
+    args = parser.parse_args(argv[1:])
+
     # An already-downloaded tarball may be passed as the single argument. The
     # build is identical either way; the fetch is just the slow, flaky part of a
     # by-hand run, and nothing but this script ever reads a local copy.
     with tempfile.TemporaryDirectory() as workspace:
-        archive = Path(argv[1]) if len(argv) > 1 else Path(workspace) / "scowl.tar.gz"
-        if len(argv) <= 1:
-            download(archive)
+        archive = args.archive if args.archive is not None else Path(workspace) / "scowl.tar.gz"
+        if args.archive is None:
+            expected = args.expected_sha256 if args.expected_sha256 is not None else EXPECTED_SHA256
+            download(archive, expected_sha256=expected)
         with tarfile.open(archive) as tar:
             table, sizes = read_bands(tar)
             write_licence(tar)

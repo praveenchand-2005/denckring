@@ -297,7 +297,13 @@ def eval_command(
     run_all: Annotated[bool, typer.Option("--all")] = True,
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Run every golden example. Exits non-zero on regression."""
+    """Run every golden example. Exits non-zero on regression.
+
+    `--all` is accepted and does nothing: `eval` has always meant every
+    golden case, and there has never been a narrower mode for it to select
+    out of. Kept rather than removed because CI and this project's own
+    documented gate both invoke `eval --all` (review finding P3-01).
+    """
     board = harness.run()
     if as_json:
         typer.echo(board.model_dump_json(indent=2))

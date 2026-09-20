@@ -1,9 +1,12 @@
+import time
+
 import pytest
 
 from denckring import check
 from denckring.core.errors import MissingCapability
 from denckring.core.protocol import Constructive
 from denckring.core.registry import get
+from denckring.procedures.paragram import Paragram, _count_pairs, differ_by_one
 
 
 def test_a_one_letter_swap_is_found() -> None:
@@ -210,3 +213,134 @@ def test_a_word_the_table_does_not_know_ranks_mid_not_best() -> None:
     swapped = [t.split()[3] for t in texts]
     if "dat" in swapped and "bat" in swapped:
         assert swapped.index("bat") < swapped.index("dat")
+
+
+def _reference_pair_count(words: list[str]) -> int:
+    """The old O(U^2 * L) algorithm, kept here only as an equivalence oracle."""
+    from itertools import combinations
+
+    return sum(
+        1 for left, right in combinations(sorted(set(words)), 2) if differ_by_one(left, right)
+    )
+
+
+def test_count_pairs_agrees_with_the_reference_on_small_corpora() -> None:
+    import random
+
+    rng = random.Random(7)
+    alphabet = "abcdefg"
+    for _ in range(200):
+        size = rng.randint(0, 30)
+        length = rng.randint(1, 5)
+        words = ["".join(rng.choice(alphabet) for _ in range(length)) for _ in range(size)]
+        assert _count_pairs(words) == _reference_pair_count(words), words
+
+
+def test_count_pairs_is_not_quadratic() -> None:
+    """P1-02: 10,000 unique 5-letter words must count in well under a second,
+    not the tens of seconds the O(U^2) scan took at this size."""
+    words = [f"{i:05d}".translate(str.maketrans("0123456789", "abcdefghij")) for i in range(10_000)]
+    assert len(set(words)) == 10_000
+    start = time.monotonic()
+    _count_pairs(words)
+    elapsed = time.monotonic() - start
+    assert elapsed < 2.0, f"took {elapsed:.2f}s — check the pair-counting algorithm is still O(U*L)"
+
+
+def test_a_large_adversarial_text_checks_without_hanging() -> None:
+    """The actual public entry point, not just the helper — MCP calls this."""
+    procedure = Paragram()
+    words = [f"{i:05d}".translate(str.maketrans("0123456789", "abcdefghij")) for i in range(5_000)]
+    text = " ".join(words)
+    start = time.monotonic()
+    report = procedure.check(text)
+    elapsed = time.monotonic() - start
+    assert elapsed < 3.0, f"took {elapsed:.2f}s"
+    assert report.metrics["pairs"] >= 0.0
+
+
+def test_a_single_very_long_word_does_not_hang() -> None:
+    """Fix round 1: the first version of `_count_pairs` rebuilt an O(length)
+    wildcarded *string* per position instead of an O(1) hash combine, which is
+    O(length^2) per word and invisible to every test above — they all fix
+    word length at 5 and vary word *count*. This is the exact adversarial
+    input the round-1 review reported hanging: one word, zero possible pairs,
+    but the buggy version still took over a second on it — while the O(U^2*L)
+    `combinations()` code this task originally replaced was instant, since a
+    one-element set has no pairs to check at all.
+    """
+    start = time.monotonic()
+    result = _count_pairs(["a" * 99_999 + "b"])
+    elapsed = time.monotonic() - start
+    assert result == 0
+    assert elapsed < 1.0, f"took {elapsed:.2f}s — check for an O(length^2) regression"
+
+
+def test_count_pairs_scales_with_word_length() -> None:
+    """The word-length axis, which no test above exercises: word *count* is
+    fixed low (20) and only *length* varies, so a quadratic-in-length
+    regression shows up as a blow-up here even though it's invisible to
+    `test_count_pairs_is_not_quadratic` (which fixes length at 5) and
+    `test_a_large_adversarial_text_checks_without_hanging` (length 5 again).
+    Doubling the length should cost roughly double, not roughly quadruple.
+    """
+
+    def _timed(length: int) -> float:
+        words = [f"{i:04d}{'x' * (length - 4)}" for i in range(20)]
+        start = time.monotonic()
+        _count_pairs(words)
+        return time.monotonic() - start
+
+    small = _timed(2000)
+    large = _timed(8000)
+    assert large < max(small * 4, 1.0), (
+        f"length 2000 took {small:.3f}s, length 8000 (4x longer) took "
+        f"{large:.3f}s — that looks quadratic in word length, not linear"
+    )
+    # Generous, for the reason `test_a_realistic_long_document_checks_without_hanging`
+    # gives: the ratio above is the rule, and an absolute wall-clock bound measures
+    # the runner and its instrumentation as much as it measures the code.
+    assert large < 30.0, f"took {large:.2f}s for 20 words of length 8000 — that is a hang"
+
+
+def test_a_realistic_long_document_checks_without_hanging() -> None:
+    """Mirrors the round-1 review's more realistic case: not one pathological
+    word, but many long, unique ones — 300 unique 3000-character words is a
+    plausible large document, not an extreme construction, and it hung for
+    2.6s under the O(length^2) regression.
+
+    The rule under test is that cost is linear in word length, so that is what
+    is asserted: halving the length should roughly halve the work. An absolute
+    wall-clock ceiling cannot express it, because the same correct code runs
+    several times slower under the coverage job's instrumentation than it does
+    on a bare local run — a 1.0s ceiling passed locally and failed CI at 1.69s
+    while the implementation was right. A ratio is immune to that, because both
+    measurements carry the same overhead; the generous ceiling below stays only
+    to keep the literal promise in this test's name.
+    """
+    import random
+
+    rng = random.Random(3)
+    alphabet = "abcdefghij"
+
+    def _timed(length: int) -> float:
+        words = {"".join(rng.choice(alphabet) for _ in range(length)) for _ in range(300)}
+        assert len(words) == 300
+        listed = list(words)
+        # The minimum of a few runs, not the mean: a shared CI runner adds time
+        # to a sample, never removes it, so the fastest run is the least noisy
+        # estimate of the work actually being done.
+        return min(_elapsed(listed) for _ in range(3))
+
+    def _elapsed(words: list[str]) -> float:
+        start = time.monotonic()
+        _count_pairs(words)
+        return time.monotonic() - start
+
+    half = _timed(1500)
+    full = _timed(3000)
+    assert full < half * 3, (
+        f"300 words of length 1500 took {half:.3f}s, length 3000 (2x longer) took "
+        f"{full:.3f}s — linear costs about 2x, quadratic about 4x, and this is neither"
+    )
+    assert full < 30.0, f"took {full:.2f}s for 300 unique 3000-char words — that is a hang"

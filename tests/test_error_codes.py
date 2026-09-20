@@ -41,7 +41,7 @@ def test_codes_are_unique() -> None:
     assert not duplicates, f"duplicate codes: {duplicates}"
 
 
-def test_there_are_nineteen_subclasses() -> None:
+def test_there_are_twenty_subclasses() -> None:
     """Pins the inventory. If this fails, a class was added or removed and the
     codes table in the spec needs the same edit.
 
@@ -49,8 +49,10 @@ def test_there_are_nineteen_subclasses() -> None:
     returned its own input, and `InputTooShort` for the four that did so because
     the input could not feed them. Eighteen until `NotConstructive` replaced the
     dict the MCP tool built by hand for a procedure with no generator.
+    Nineteen until `TextTooLong` gave the MCP service boundary its own error
+    for a text past the configured size limit (review finding P2-06).
     """
-    assert len(subclasses()) == 19
+    assert len(subclasses()) == 20
 
 
 def test_to_dict_carries_code_and_message() -> None:

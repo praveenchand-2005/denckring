@@ -1,6 +1,6 @@
 """denckring — a library of experimental writing procedures."""
 
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from denckring.core.describe import Description, Scholarly, Summary, describe, summaries
@@ -8,7 +8,14 @@ from denckring.core.errors import NotConstructive
 from denckring.core.protocol import Constructive, Lang, Meta, Production, Report, Violation
 from denckring.core.registry import all_procedures, get
 
-__version__ = version("denckring")
+try:
+    __version__ = version("denckring")
+except PackageNotFoundError:
+    #: A bare `PYTHONPATH=src` checkout has no installed distribution to read
+    #: a version from. The documented uv workflow always installs first, so
+    #: this is a fallback for ad-hoc source-tree tooling, not the normal path
+    #: (review finding P3-02) — installed metadata stays authoritative.
+    __version__ = "0+unknown"
 
 
 def check(procedure_id: str, text: str, *, lang: Lang = "en", **params: Any) -> Report:

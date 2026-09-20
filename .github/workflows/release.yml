@@ -20,16 +20,44 @@ on:
         options: [testpypi, none]
 
 jobs:
-  build:
+  # P1-03: a pushed tag must match every workspace version and a stamped
+  # changelog section before this workflow is allowed to build or publish —
+  # see scripts/release_preflight.py for the check itself. Runs on every
+  # trigger, unconditionally — an `if:`-guarded preflight would leave
+  # `build`'s `needs: [preflight]` depending on a job that is sometimes
+  # skipped, and whether GitHub Actions treats a skipped dependency as
+  # satisfied is exactly the kind of thing worth not relying on. Instead the
+  # job always runs and the tag/version/changelog check happens only on a
+  # `push` (a real tag); `workflow_dispatch` (the TestPyPI rehearsal) has no
+  # tag to check against, so it prints why and exits 0.
+  preflight:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify tag, version and changelog agree (skipped outside a tag push)
+        # $GITHUB_EVENT_NAME/$GITHUB_REF_NAME (GitHub's own default env vars,
+        # already used the same way by the `notes` job below) rather than
+        # ${{ github.ref_name }} inline: a tag name can legally contain shell
+        # metacharacters, and an env var doesn't get shell-expanded the way an
+        # `${{ }}` substitution does.
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            python3 scripts/release_preflight.py "$GITHUB_REF_NAME"
+          else
+            echo "not a tag push — preflight has nothing to check"
+          fi
+
+  build:
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
       - run: uv build --all-packages
-      - run: uvx twine check dist/*
-      - uses: actions/upload-artifact@v7
+      - run: uvx twine@7.0.0 check dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: distributions
           path: dist/
@@ -40,14 +68,15 @@ jobs:
   # `gh-deploy` needs a paid plan, which meant the old order guaranteed that the
   # first release would publish and then go red.
   docs:
+    needs: [preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
       - run: uv sync --extra en
@@ -63,7 +92,7 @@ jobs:
     # TestPyPI, from a manual run. One leg per distribution, for the reason the
     # `publish` matrix below spells out.
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
-    needs: [build, docs]
+    needs: [preflight, build, docs]
     runs-on: ubuntu-latest
     strategy:
       # Every leg is independent and each says something different: stopping the
@@ -82,7 +111,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: distributions
           path: all-dist/
@@ -98,7 +127,7 @@ jobs:
             echo "expected 2 artefacts for ${{ matrix.dist }}, found $count"; ls -l dist; exit 1;
           }
           ls -l dist
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
           # Off here and on for the real thing: TestPyPI is periodically pruned,
@@ -131,7 +160,7 @@ jobs:
     # token this whole arrangement exists to avoid; the second breaks the version
     # lock these six are released under.
     if: github.event_name == 'push'
-    needs: [build, docs]
+    needs: [preflight, build, docs]
     runs-on: ubuntu-latest
     strategy:
       # A partial release is the failure mode here, and it is worth seeing whole:
@@ -154,7 +183,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: distributions
           path: all-dist/
@@ -170,7 +199,7 @@ jobs:
             echo "expected 2 artefacts for ${{ matrix.dist }}, found $count"; ls -l dist; exit 1;
           }
           ls -l dist
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: true
 
@@ -192,7 +221,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Cut the section for this tag out of the changelog
         run: |
           set -euo pipefail

@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `check_text` and `apply_procedure` on the MCP server now refuse a text over
+  `DENCKRING_MCP_MAX_CHARS` characters (default 50000) with a new `text_too_long`
+  error code, rather than running an algorithm sized for an interactive call
+  against an arbitrarily large remote input (P2-06).
+
+### Changed
+
+- `Meta.aliases`, `Meta.languages`, `Meta.requires` and `Meta.apply_requires` are
+  now `tuple[str, ...]` rather than `list[str]`, and `Meta` itself is frozen
+  (P2-01): `catalogue.get()` returns the same cached object to every caller, and a
+  mutable `Meta` let one caller's introspection silently change what a registered
+  procedure required for every future `check()` call.
+- `Report` now raises `ValidationError` if constructed — or, as of this release,
+  mutated — with `satisfied` disagreeing with `score == 1.0` (P2-02). This was
+  previously only a documented convention that individual procedures were trusted
+  to honor.
+- `describe.runnable()` and `apply_runnable()` now propagate exceptions other than
+  `UnknownLanguage` instead of swallowing all of `Exception`, so a bug in a
+  procedure's own code is no longer indistinguishable from that procedure
+  legitimately not running in a given language.
+
 ## [0.2.0] - 2026-09-11
 
 ### Added

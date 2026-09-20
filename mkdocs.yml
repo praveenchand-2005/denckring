@@ -101,6 +101,7 @@ nav:
       - "41. A pun is a relation": adr/0041-the-pun-as-a-relation.md
       - "42. The blend needs no g2p": adr/0042-the-blend-needs-no-g2p.md
       - "43. The notation bridge": adr/0043-the-notation-bridge-and-the-third-shape.md
+      - "44. Third-party language packs are upgrade-only": adr/0044-language-packs-are-upgrade-only.md
   - Contributing: contributing.md
   - Changelog: changelog.md
 

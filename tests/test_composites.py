@@ -185,7 +185,7 @@ def test_multiple_constraint_does_not_declare_a_delegates_capability() -> None:
     declaration must not grow just because `dactylic_hexameter` needs `stress`."""
     from denckring.core import catalogue
 
-    assert catalogue.get("multiple_constraint").requires == ["tokens"]
+    assert catalogue.get("multiple_constraint").requires == ("tokens",)
 
 
 def test_multiple_constraint_lets_a_delegates_missing_capability_propagate_cleanly(

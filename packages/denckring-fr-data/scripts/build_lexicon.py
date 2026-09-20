@@ -26,7 +26,18 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-LEXIQUE_URL = "http://www.lexique.org/databases/Lexique382/Lexique382.zip"
+from _download_integrity import verify_or_record
+
+#: `www.lexique.org`, not the bare domain, was plain HTTP with no transport
+#: integrity at all (P2-05). HTTPS is available, but only on the bare domain:
+#: `lexique.org`'s certificate does not cover the `www.` name (verified
+#: 2026-09-19 — `www.lexique.org` fails `CERTIFICATE_VERIFY_FAILED: Hostname
+#: mismatch`), so the fix drops `www.` rather than just swapping the scheme.
+LEXIQUE_URL = "https://lexique.org/databases/Lexique382/Lexique382.zip"
+#: Captured 2026-09-19 from a real download of the URL above — 26,534,771
+#: bytes. Re-run this script with `--expected-sha256` omitted to print a new
+#: digest to pin if Lexique ever ships a new release at this URL.
+EXPECTED_SHA256 = "2d1932dc4334f7ae715563d6e4e68ff296f7a16a47e6cb6707c7ab7d2bd7402b"
 #: Recorded for provenance and surfaced in `--dump`'s help text, but never fetched
 #: automatically the way `--lexique`'s omission fetches `LEXIQUE_URL`. The German
 #: sibling's equivalent dump is 267 MB; this one is 876 MB, and a flag omitted by
@@ -325,6 +336,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lexique", type=Path, help="A downloaded Lexique382.zip.")
     parser.add_argument("--dump", type=Path, help=f"A downloaded frwiktionary dump ({DUMP_URL}).")
+    parser.add_argument(
+        "--expected-sha256",
+        help="SHA-256 the downloaded Lexique archive must match (defaults to EXPECTED_SHA256).",
+    )
     args = parser.parse_args()
 
     archive = args.lexique
@@ -332,9 +347,12 @@ def main() -> None:
         archive = DATA.parent.parent.parent / "Lexique382.zip"
         print(f"downloading {LEXIQUE_URL} -> {archive}", file=sys.stderr)
         request = urllib.request.Request(LEXIQUE_URL, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request) as response, archive.open("wb") as handle:
-            while chunk := response.read(1 << 20):
-                handle.write(chunk)
+        with urllib.request.urlopen(request) as response:
+            data = response.read()
+        expected = args.expected_sha256 if args.expected_sha256 is not None else EXPECTED_SHA256
+        digest = verify_or_record(data, source=LEXIQUE_URL, expected_sha256=expected)
+        print(f"{LEXIQUE_URL}: sha256 {digest}", file=sys.stderr)
+        archive.write_bytes(data)
 
     # `lexique_rows` returns a list rather than a generator, so it can feed
     # both `build_tables` and `write_syllables` from the one parse.

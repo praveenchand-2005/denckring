@@ -19,6 +19,41 @@ def test_violation_offset_is_optional() -> None:
     assert Violation(rule="forbidden_letter", found="e", expected="").offset is None
 
 
+def test_report_refuses_a_contradictory_verdict() -> None:
+    """P2-02: satisfied and score must agree — the model enforces its own
+    documented invariant rather than trusting every constructor to."""
+    with pytest.raises(ValidationError):
+        Report(procedure="x", satisfied=True, score=0.0)
+    with pytest.raises(ValidationError):
+        Report(procedure="x", satisfied=False, score=1.0)
+
+
+def test_report_refuses_a_contradictory_verdict_on_assignment_too() -> None:
+    """Whole-branch review finding: `model_validator(mode="after")` alone only
+    re-runs at construction. Without `validate_assignment=True`, `r.satisfied =
+    True` on an already-built `Report` silently violated the same invariant
+    `test_report_refuses_a_contradictory_verdict` enforces at construction.
+
+    Two separate instances, not one assignment after another: pydantic sets a
+    field before running the model validator on assignment, and does not roll
+    the field back when that validator then raises, so a second assignment on
+    the same (now-corrupted) instance would not exercise a fresh violation.
+    """
+    by_satisfied = Report(procedure="x", satisfied=False, score=0.5)
+    with pytest.raises(ValidationError):
+        by_satisfied.satisfied = True
+
+    by_score = Report(procedure="x", satisfied=False, score=0.5)
+    with pytest.raises(ValidationError):
+        by_score.score = 1.0
+
+
+def test_report_accepts_every_consistent_verdict() -> None:
+    Report(procedure="x", satisfied=True, score=1.0)
+    Report(procedure="x", satisfied=False, score=0.5)
+    Report(procedure="x", satisfied=False, score=0.0)
+
+
 def test_meta_round_trips_through_json() -> None:
     meta = Meta(
         id="lipogram",
@@ -28,10 +63,10 @@ def test_meta_round_trips_through_json() -> None:
         family="letter",
         attribution="primary",
         checkability="self",
-        aliases=[],
+        aliases=(),
         kind="restrictive",
-        languages=["en"],
-        requires=["tokens"],
+        languages=("en",),
+        requires=("tokens",),
         deterministic=True,
         prompt_hints={"en": "Write without using the letter e."},
     )

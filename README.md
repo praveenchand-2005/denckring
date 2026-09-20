@@ -59,6 +59,11 @@ The server exposes four tools — `list_procedures`, `describe_procedure`, `chec
 tools, because model performance degrades with tool count. Errors come back as data
 (`{"code": "invalid_params", ...}`), never as a traceback a model cannot act on.
 
+`check_text` and `apply_procedure` refuse a text over `DENCKRING_MCP_MAX_CHARS` characters
+(default 50000, counting `text` plus any string parameters such as `source`) with a
+`text_too_long` error, rather than running against an arbitrarily large remote input. Set
+`DENCKRING_MCP_MAX_CHARS` to raise or lower that cap for a known workload.
+
 For Claude Code, the skill at
 [`skills/denckring/SKILL.md`](https://github.com/senzelden/denckring/blob/main/skills/denckring/SKILL.md)
 shells out to the CLI instead, and needs no extra beyond the package itself.
@@ -191,8 +196,11 @@ are built on them:
   returns `texts[0]`.
 - **The catalogue export schema** (`denckring catalogue export`), including the `licence`
   and `attribution` keys the CC BY terms are carried by.
-- **The `denckring.lang` entry-point group** and the capability names a pack declares, so
-  an installed third-party pack keeps working.
+- **The `denckring.lang` entry-point group** and the capability names a pack
+  declares, so an installed third-party pack keeps working. This covers
+  replacing or extending the data behind English, German or French (ADR
+  0044) — `Lang` itself is a closed three-member type, so a pack cannot
+  register a new language through this mechanism.
 
 Not stable, and expected to move: violation `rule` strings, `metrics` keys, message
 wording, and everything under `denckring.core`. A check's *verdict* is a contract; the

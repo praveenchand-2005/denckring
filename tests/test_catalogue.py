@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from denckring.core import catalogue
 from denckring.core.errors import UnknownProcedure
@@ -42,3 +43,22 @@ def test_the_rows_that_decline_a_stress_model_say_so() -> None:
     does not say why is the defect this asserts against."""
     assert "sprung rhythm" in (catalogue.get("curtal_sonnet").notes or "")
     assert "accentual" in (catalogue.get("elegiac_couplet").notes or "")
+
+
+def test_a_caller_cannot_mutate_the_shared_catalogue_entry() -> None:
+    """P2-01: catalogue.get() must not hand back a mutable shared object."""
+    meta = catalogue.get("lipogram")
+    with pytest.raises((AttributeError, TypeError)):
+        meta.requires.append("sentinel.capability")  # type: ignore[attr-defined]
+
+
+def test_reassigning_a_catalogue_entry_field_is_refused() -> None:
+    meta = catalogue.get("lipogram")
+    with pytest.raises(ValidationError):
+        meta.requires = ()
+
+
+def test_mutating_one_call_result_does_not_affect_another() -> None:
+    first = catalogue.get("lipogram")
+    second = catalogue.get("lipogram")
+    assert first.requires == second.requires

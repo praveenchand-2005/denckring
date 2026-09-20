@@ -14,11 +14,14 @@ beside a verdict on a page, and a stopped daemon should not take the page down.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 #: Where the daemon listens. Overridable because a reader running Ollama on
 #: another host should not have to edit this file to try the page.
@@ -113,6 +116,7 @@ def available() -> tuple[list[LocalModel], str]:
         with urllib.request.urlopen(f"{HOST}/api/tags", timeout=10) as response:
             payload = json.loads(response.read())
     except Exception as exc:
+        logger.exception("could not list Ollama models")
         return [], f"Could not reach Ollama at {HOST} ({exc})."
     found = []
     for row in payload.get("models", []):

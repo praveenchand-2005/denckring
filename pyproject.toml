@@ -212,8 +212,10 @@ allowed-confusables = ["ˈ", "ː", "ɡ", "ɪ", "ʏ", "ɑ"]
 [tool.mypy]
 # The sixth distribution keeps its build script beside itself, the way the
 # French one does, so the case rule of ADR 0038 D3 can be imported by a test
-# and typechecked rather than only executed.
-mypy_path = "tests:scripts:packages/denckring-de-frequency/scripts"
+# and typechecked rather than only executed. `denckring-en-data/scripts` is
+# here for the same reason: tests/test_download_integrity.py (P2-05) imports
+# that package's copy of `_download_integrity`.
+mypy_path = "tests:scripts:packages/denckring-de-frequency/scripts:packages/denckring-en-data/scripts"
 python_version = "3.11"
 strict = true
 warn_unreachable = true

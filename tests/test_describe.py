@@ -134,3 +134,27 @@ def test_renga_and_haibun_match_haikus_catalogued_requirements() -> None:
     itself is exercised by the core-only-pack tests above.)"""
     assert runnable(meta_for("renga"))[0] == runnable(meta_for("haiku"))[0]
     assert runnable(meta_for("haibun"))[0] == runnable(meta_for("haiku"))[0]
+
+
+def test_runnable_lets_a_broken_pack_error_surface(monkeypatch: pytest.MonkeyPatch) -> None:
+    """P2-03: only UnknownLanguage should read as 'not runnable' — a broken
+    plugin's own exception must not be silently downgraded to a capability gap."""
+    from denckring.core import describe
+    from denckring.core.catalogue import get as get_meta
+
+    def broken_get_pack(lang: str) -> None:
+        raise RuntimeError("simulated broken plugin")
+
+    monkeypatch.setattr("denckring.lang.get_pack", broken_get_pack)
+    meta = get_meta("lipogram")
+    with pytest.raises(RuntimeError):
+        describe.runnable(meta, "en")
+
+
+def test_runnable_still_treats_an_unknown_language_as_not_runnable() -> None:
+    from denckring.core import describe
+    from denckring.core.catalogue import get as get_meta
+
+    meta = get_meta("lipogram")
+    ok, _missing = describe.runnable(meta, "xx")  # type: ignore[arg-type]
+    assert not ok

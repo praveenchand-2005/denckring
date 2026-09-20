@@ -125,6 +125,6 @@ def test_spoonerism_declares_the_capability_its_written_onset_needs() -> None:
     `supervocalic` declares it for. The row's docstring also still asserted a
     `requires` of `[tokens, fold_diacritics, phonemes]` two corrections after that
     stopped being true."""
-    assert catalogue.get("spoonerism").requires == ["tokens", "alphabet", "phonemes"]
+    assert catalogue.get("spoonerism").requires == ("tokens", "alphabet", "phonemes")
     assert spoonerism.__doc__ is not None
     assert "[tokens, alphabet, phonemes]" in spoonerism.__doc__
