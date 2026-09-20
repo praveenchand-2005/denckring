@@ -297,21 +297,50 @@ def test_count_pairs_scales_with_word_length() -> None:
         f"length 2000 took {small:.3f}s, length 8000 (4x longer) took "
         f"{large:.3f}s — that looks quadratic in word length, not linear"
     )
-    assert large < 1.0, f"took {large:.2f}s for 20 words of length 8000"
+    # Generous, for the reason `test_a_realistic_long_document_checks_without_hanging`
+    # gives: the ratio above is the rule, and an absolute wall-clock bound measures
+    # the runner and its instrumentation as much as it measures the code.
+    assert large < 30.0, f"took {large:.2f}s for 20 words of length 8000 — that is a hang"
 
 
 def test_a_realistic_long_document_checks_without_hanging() -> None:
     """Mirrors the round-1 review's more realistic case: not one pathological
     word, but many long, unique ones — 300 unique 3000-character words is a
     plausible large document, not an extreme construction, and it hung for
-    2.6s under the O(length^2) regression."""
+    2.6s under the O(length^2) regression.
+
+    The rule under test is that cost is linear in word length, so that is what
+    is asserted: halving the length should roughly halve the work. An absolute
+    wall-clock ceiling cannot express it, because the same correct code runs
+    several times slower under the coverage job's instrumentation than it does
+    on a bare local run — a 1.0s ceiling passed locally and failed CI at 1.69s
+    while the implementation was right. A ratio is immune to that, because both
+    measurements carry the same overhead; the generous ceiling below stays only
+    to keep the literal promise in this test's name.
+    """
     import random
 
     rng = random.Random(3)
     alphabet = "abcdefghij"
-    words = {"".join(rng.choice(alphabet) for _ in range(3000)) for _ in range(300)}
-    assert len(words) == 300
-    start = time.monotonic()
-    _count_pairs(list(words))
-    elapsed = time.monotonic() - start
-    assert elapsed < 1.0, f"took {elapsed:.2f}s for 300 unique 3000-char words"
+
+    def _timed(length: int) -> float:
+        words = {"".join(rng.choice(alphabet) for _ in range(length)) for _ in range(300)}
+        assert len(words) == 300
+        listed = list(words)
+        # The minimum of a few runs, not the mean: a shared CI runner adds time
+        # to a sample, never removes it, so the fastest run is the least noisy
+        # estimate of the work actually being done.
+        return min(_elapsed(listed) for _ in range(3))
+
+    def _elapsed(words: list[str]) -> float:
+        start = time.monotonic()
+        _count_pairs(words)
+        return time.monotonic() - start
+
+    half = _timed(1500)
+    full = _timed(3000)
+    assert full < half * 3, (
+        f"300 words of length 1500 took {half:.3f}s, length 3000 (2x longer) took "
+        f"{full:.3f}s — linear costs about 2x, quadratic about 4x, and this is neither"
+    )
+    assert full < 30.0, f"took {full:.2f}s for 300 unique 3000-char words — that is a hang"
